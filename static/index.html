@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SSI Ticketing (DEMO)</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --txt:#e8eaf0; --mut:#9aa3b2;
+          --free:#2fbf71; --sold:#4a4f5c; --sel:#f5b82e; --acc:#4c8dff; --warn:#ff7a59; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; }
+  .badge { background:var(--warn); color:#111; font-weight:700; font-size:11px; padding:2px 8px; border-radius:99px; }
+  .note { background:#2b2112; border:1px solid #5a4316; color:#f3d59b; padding:8px 20px; font-size:12.5px; }
+  main { display:grid; grid-template-columns: minmax(320px,1.2fr) minmax(320px,1fr); gap:16px; padding:16px; }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .card h2 { font-size:15px; margin:0 0 10px; }
+  select, input, button { font:inherit; color:var(--txt); background:#0f1218; border:1px solid var(--line); border-radius:8px; padding:7px 10px; }
+  button { cursor:pointer; background:var(--acc); border-color:var(--acc); color:#fff; font-weight:600; }
+  button.ghost { background:transparent; color:var(--txt); border-color:var(--line); font-weight:500; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:8px 0; }
+  .mut { color:var(--mut); font-size:12.5px; }
+  .err { color:var(--warn); font-size:13px; min-height:18px; }
+  svg#map { width:100%; height:auto; background:#0b0d12; border-radius:10px; }
+  svg#map .sec { stroke:#0b0d12; stroke-width:2; cursor:pointer; transition:opacity .15s; }
+  svg#map .sec:hover { opacity:.75; }
+  svg#map text { fill:#fff; font-size:13px; font-weight:700; pointer-events:none; text-anchor:middle; }
+  .legend span { display:inline-block; margin-right:12px; font-size:12px; color:var(--mut); }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; vertical-align:-1px; }
+  .seats { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; overflow:auto; max-height:360px; }
+  .seats .r { display:flex; gap:3px; align-items:center; margin:2px 0; }
+  .seats .rl { width:34px; color:var(--mut); text-align:right; margin-right:6px; }
+  .seat { width:18px; height:16px; border-radius:4px 4px 2px 2px; background:var(--free); border:0; padding:0; cursor:pointer; }
+  .seat.s { background:var(--sold); cursor:not-allowed; }
+  .seat.sel { background:var(--sel); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 6px; border-bottom:1px solid var(--line); }
+  tr.pick { cursor:pointer; }
+  tr.pick:hover td { background:#1e222b; }
+  .sum { font-size:15px; font-weight:700; }
+  label { display:block; font-size:12px; color:var(--mut); margin:8px 0 3px; }
+  input, select { width:100%; }
+  .ok { background:#0f2a1d; border:1px solid #1f6b43; padding:12px; border-radius:10px; }
+  .pill { font-size:11px; padding:1px 7px; border-radius:99px; background:#222835; color:var(--mut); }
+  .pill.VIP { background:#3a2a10; color:#f5b82e; } .pill.Premium { background:#1f2d4a; color:#8fb4ff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Stadium Sultan Ibrahim · Tiket</h1>
+  <span class="badge">DEMO</span>
+  <span class="mut">Iskandar Puteri, Johor</span>
+  <span style="flex:1"></span>
+  <select id="evSel" aria-label="Pilih acara"></select>
+</header>
+<div class="note">
+  Mod demo. Susun atur kerusi, harga dan lot parkir ialah <b>anggaran</b>, bukan data rasmi SSI.
+  Pembayaran TNG eWallet ialah <b>simulasi</b>: tiada wang sebenar dipotong.
+</div>
+
+<main>
+  <section class="card">
+    <h2>1 · Peta tempat duduk</h2>
+    <div class="legend row">
+      <span><i style="background:var(--free)"></i>Ada kerusi</span>
+      <span><i style="background:#8a6d2a"></i>Hampir penuh</span>
+      <span><i style="background:var(--sold)"></i>Penuh</span>
+    </div>
+    <svg id="map" viewBox="0 0 1000 700" role="img" aria-label="Peta seksyen stadium"></svg>
+    <div class="row"><span class="mut">Klik seksyen untuk lihat kerusi. Padang berada di tengah.</span></div>
+
+    <h2 style="margin-top:14px">Cadangan kerusi</h2>
+    <div class="row">
+      <label style="margin:0">Susun ikut
+        <select id="sort">
+          <option value="score">Paling dekat padang</option>
+          <option value="price_asc">Harga termurah</option>
+          <option value="price_desc">Harga tertinggi</option>
+          <option value="row">Ikut seksyen &amp; baris</option>
+        </select>
+      </label>
+      <label style="margin:0">Seksyen
+        <select id="secFilter"><option value="">Semua</option></select>
+      </label>
+      <button class="ghost" id="btnList">Tunjuk</button>
+    </div>
+    <div style="max-height:260px;overflow:auto">
+      <table><thead><tr><th>Seksyen</th><th>Baris</th><th>Kerusi</th><th>Tier</th><th>RM</th></tr></thead>
+      <tbody id="bestBody"></tbody></table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2 · Pilih kerusi</h2>
+    <div id="secTitle" class="mut">Klik seksyen di peta atau pilih dari senarai.</div>
+    <div class="seats" id="seatGrid"></div>
+
+    <div class="row" style="margin-top:10px">
+      <label style="margin:0">Auto pilih kerusi bersebelahan
+        <select id="autoQty"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select>
+      </label>
+      <button class="ghost" id="btnAuto">Auto pilih</button>
+      <button class="ghost" id="btnClear">Kosongkan pilihan</button>
+    </div>
+
+    <div class="sum" id="sumLine">Belum pilih kerusi</div>
+    <div class="mut" id="selList"></div>
+
+    <h2 style="margin-top:16px">3 · Parkir (pilihan)</h2>
+    <div id="parkList"></div>
+    <label>No. plat kenderaan (jika parkir)</label>
+    <input id="plate" placeholder="contoh: JHR 1234" maxlength="12">
+
+    <h2 style="margin-top:16px">4 · Maklumat & bayaran</h2>
+    <label>Nama penuh</label><input id="name" maxlength="100">
+    <label>E-mel</label><input id="email" type="email" maxlength="120">
+    <label>No. telefon</label><input id="phone" placeholder="+60123456789" maxlength="20">
+    <div class="row"><button id="btnBook">Teruskan ke bayaran TNG (demo)</button></div>
+    <div class="err" id="err"></div>
+    <div id="payBox"></div>
+
+    <h2 style="margin-top:16px">Semak tempahan</h2>
+    <div class="row">
+      <input id="lookup" placeholder="Kod tempahan, cth SSI-XXXXXXXX" style="flex:1">
+      <button class="ghost" id="btnLookup">Semak</button>
+    </div>
+    <div id="lookupBox"></div>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const RM = (n) => "RM " + Number(n).toFixed(0);
+let evId = null, detail = null, curSec = null, grid = null, selected = new Map(), parkingChoice = "";
+
+function el(tag, attrs = {}, text) {
+  const e = document.createElement(tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+async function api(path, opts) {
+  const r = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, opts || {}));
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ("Ralat " + r.status));
+  return j;
+}
+const setErr = (m) => { $("#err").textContent = m || ""; };
+
+async function loadEvents() {
+  const evs = await api("/api/events");
+  const sel = $("#evSel");
+  sel.innerHTML = "";
+  evs.forEach((e) => sel.appendChild(el("option", { value: e.id }, e.name)));
+  evId = evs[0].id;
+  sel.onchange = () => { evId = +sel.value; resetSel(); loadEvent(); };
+  await loadEvent();
+}
+
+async function loadEvent() {
+  detail = await api(`/api/events/${evId}`);
+  drawMap();
+  const fs = $("#secFilter");
+  fs.innerHTML = '<option value="">Semua</option>';
+  detail.sections.forEach((s) => fs.appendChild(el("option", { value: s.id }, `${s.id} · ${s.name}`)));
+  await loadParking();
+  if (curSec) await openSection(curSec); else await listBest();
+}
+
+function fillRatio(s) { return s.total ? s.free / s.total : 0; }
+function fillColor(s) {
+  const r = fillRatio(s);
+  if (r === 0) return "var(--sold)";
+  if (r < 0.2) return "#8a6d2a";
+  return TIER_COLOR[s.tier] || "#2f7f5a";
+}
+const TIER_COLOR = { VIP: "#b8860b", Premium: "#2f5fb3", Standard: "#2f7f5a", Ekonomi: "#6b5b95" };
+
+function drawMap() {
+  const svg = $("#map");
+  svg.innerHTML = "";
+  const NS = "http://www.w3.org/2000/svg";
+  const mk = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  svg.appendChild(mk("ellipse", { cx: 500, cy: 350, rx: 470, ry: 330, fill: "#11151c", stroke: "#222a36" }));
+  svg.appendChild(mk("rect", { x: 380, y: 262, width: 240, height: 176, rx: 10, fill: "#1d5c35", stroke: "#2c7a48" }));
+  svg.appendChild(mk("line", { x1: 500, y1: 262, x2: 500, y2: 438, stroke: "#2c7a48", "stroke-width": 2 }));
+  svg.appendChild(mk("circle", { cx: 500, cy: 350, r: 26, fill: "none", stroke: "#2c7a48", "stroke-width": 2 }));
+  detail.sections.forEach((s) => {
+    const g = mk("g", { class: "sec", "data-id": s.id });
+    const r = mk("rect", { x: s.box.x, y: s.box.y, width: s.box.w, height: s.box.h, rx: 6, fill: fillColor(s), class: "sec" });
+    const t = mk("text", { x: s.box.x + s.box.w / 2, y: s.box.y + s.box.h / 2 + 4 }); t.textContent = s.id;
+    g.appendChild(r); g.appendChild(t);
+    const tt = mk("title", {}); tt.textContent = `${s.name} · ${s.tier} · ${RM(s.price_rm)} · ${s.free}/${s.total} kerusi kosong`;
+    g.appendChild(tt);
+    g.addEventListener("click", () => openSection(s.id));
+    svg.appendChild(g);
+  });
+}
+
+async function openSection(id) {
+  curSec = id;
+  $("#secFilter").value = id;
+  const s = detail.sections.find((x) => x.id === id);
+  grid = await api(`/api/events/${evId}/sections/${id}`);
+  $("#secTitle").innerHTML = "";
+  $("#secTitle").append(el("b", {}, `${s.id} · ${s.name}`), " ", el("span", { class: "pill " + s.tier }, s.tier), " ",
+    el("span", { class: "mut" }, `${RM(s.price_rm)} setiap kerusi · ${s.free} kosong`));
+  renderGrid();
+  await listBest();
+}
+
+function renderGrid() {
+  const box = $("#seatGrid");
+  box.innerHTML = "";
+  grid.rows.forEach((row) => {
+    const line = el("div", { class: "r" });
+    line.appendChild(el("span", { class: "rl" }, "B" + row.row));
+    [...row.seats].forEach((c, i) => {
+      const seatNo = i + 1;
+      const key = `${grid.section}|${row.row}|${seatNo}`;
+      const cls = c === "f" ? (selected.has(key) ? "seat sel" : "seat") : "seat s";
+      const b = el("button", { class: cls, title: `${grid.section} · baris ${row.row} · no ${seatNo}`, "aria-label": `${grid.section} baris ${row.row} no ${seatNo}` });
+      if (c !== "f") b.disabled = true;
+      b.addEventListener("click", () => toggleSeat(key, { section: grid.section, row: row.row, seat: seatNo, price_rm: grid.price_rm, tier: grid.tier }));
+      line.appendChild(b);
+    });
+    box.appendChild(line);
+  });
+}
+
+function toggleSeat(key, seat) {
+  setErr("");
+  if (selected.has(key)) selected.delete(key);
+  else {
+    if (selected.size >= 8) return setErr("Maksimum 8 kerusi setiap tempahan");
+    selected.set(key, seat);
+  }
+  renderGrid(); renderSummary();
+  refreshSeatMarks();
+}
+
+function renderSummary() {
+  const seats = [...selected.values()];
+  const seatTotal = seats.reduce((a, s) => a + s.price_rm, 0);
+  const pk = parkingChoice ? detail_parking().find((p) => p.id === parkingChoice) : null;
+  const total = seatTotal + (pk ? pk.price_rm : 0);
+  $("#sumLine").textContent = seats.length
+    ? `${seats.length} kerusi · jumlah ${RM(total)}${pk ? " (termasuk parkir)" : ""}`
+    : "Belum pilih kerusi";
+  $("#selList").textContent = seats.map((s) => `${s.section}-B${s.row}-${s.seat}`).join(", ");
+}
+
+function resetSel() { selected.clear(); renderSummary(); }
+function detail_parking() { return window._parking || []; }
+
+async function listBest() {
+  const sort = $("#sort").value;
+  const sec = $("#secFilter").value;
+  const q = new URLSearchParams({ sort, limit: "25" });
+  if (sec) q.set("section", sec);
+  const rows = await api(`/api/events/${evId}/seats/best?${q}`);
+  const tb = $("#bestBody");
+  tb.innerHTML = "";
+  if (!rows.length) tb.appendChild(el("tr", {}, "")).appendChild(el("td", { colspan: 5, class: "mut" }, "Tiada kerusi kosong"));
+  rows.forEach((r) => {
+    const tr = el("tr", { class: "pick" });
+    [r.section, "B" + r.row, "No " + r.seat, r.tier, RM(r.price_rm)].forEach((v) => tr.appendChild(el("td", {}, String(v))));
+    tr.addEventListener("click", async () => {
+      await openSection(r.section);
+      toggleSeat(`${r.section}|${r.row}|${r.seat}`, { section: r.section, row: r.row, seat: r.seat, price_rm: r.price_rm, tier: r.tier });
+    });
+    tb.appendChild(tr);
+  });
+}
+
+function refreshSeatMarks() { /* kerusi ditanda dalam renderGrid */ }
+
+async function autoAssign() {
+  setErr("");
+  try {
+    const body = { quantity: +$("#autoQty").value, section: $("#secFilter").value || null };
+    const r = await api(`/api/events/${evId}/autoassign`, { method: "POST", body: JSON.stringify(body) });
+    resetSel();
+    r.seats.forEach((s) => selected.set(`${s.section}|${s.row}|${s.seat}`, s));
+    renderSummary();
+    if (curSec) await openSection(curSec); else { renderSummary(); }
+    if (r.seats.length) { curSec = r.seats[0].section; await openSection(curSec); }
+  } catch (e) { setErr(e.message); }
+}
+
+async function loadParking() {
+  const lots = await api(`/api/events/${evId}/parking`);
+  window._parking = lots;
+  const box = $("#parkList");
+  box.innerHTML = "";
+  box.appendChild(parkRow("", "Tanpa parkir", "", "", ""));
+  lots.forEach((p) => box.appendChild(parkRow(p.id, p.name, `${p.free} kosong`, RM(p.price_rm), p.requires_tier ? `hanya tiket ${p.requires_tier}` : p.note)));
+  if (!lots.some((p) => p.id === parkingChoice)) parkingChoice = "";
+  box.querySelectorAll("input[type=radio]").forEach((r) => { r.checked = r.value === parkingChoice; });
+  renderSummary();
+}
+function parkRow(id, name, free, price, note) {
+  const wrap = el("label", { style: "display:flex;gap:8px;align-items:flex-start;margin:6px 0;color:var(--txt);font-size:13px" });
+  const rb = el("input", { type: "radio", name: "park", value: id });
+  rb.style.width = "auto";
+  rb.addEventListener("change", () => { parkingChoice = id; renderSummary(); });
+  const txt = el("span", {});
+  txt.append(el("b", {}, name), " ", el("span", { class: "mut" }, [free, price].filter(Boolean).join(" · ")));
+  if (note) txt.append(el("div", { class: "mut" }, note));
+  wrap.append(rb, txt);
+  return wrap;
+}
+
+async function book() {
+  setErr("");
+  const seats = [...selected.values()].map((s) => ({ section: s.section, row: s.row, seat: s.seat }));
+  if (!seats.length) return setErr("Pilih kerusi dahulu");
+  const body = {
+    name: $("#name").value, email: $("#email").value, phone: $("#phone").value,
+    seats,
+  };
+  if (parkingChoice) body.parking = { lot_id: parkingChoice, plate: $("#plate").value };
+  try {
+    const b = await api(`/api/events/${evId}/bookings`, { method: "POST", body: JSON.stringify(body) });
+    showPay(b);
+  } catch (e) { setErr(e.message); }
+}
+
+function showPay(b) {
+  const box = $("#payBox");
+  box.innerHTML = "";
+  const card = el("div", { class: "ok", style: "margin-top:12px" });
+  card.append(el("div", {}, `Tempahan ${b.code} · ${RM(b.total_rm)}`),
+    el("div", { class: "mut" }, `Kerusi ditahan sehingga ${b.expires_at} UTC (10 minit).`));
+  const btn = el("button", {}, "Bayar dengan TNG eWallet (DEMO)");
+  btn.style.marginTop = "8px";
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      const paid = await api(`/api/payments/tng/${b.payment.ref}/pay`, { method: "POST", body: "{}" });
+      box.innerHTML = "";
+      const ok = el("div", { class: "ok", style: "margin-top:12px" });
+      ok.append(el("b", {}, "Pembayaran berjaya (demo)"), el("div", {}, `Kod tempahan: ${paid.code}`),
+        el("div", {}, `${paid.seats.length} kerusi · ${RM(paid.total_rm)}`),
+        el("div", { class: "mut" }, "Simpan kod ini untuk semakan."));
+      box.appendChild(ok);
+      resetSel(); parkingChoice = ""; await loadEvent();
+    } catch (e) { setErr(e.message); btn.disabled = false; }
+  });
+  card.appendChild(btn);
+  box.appendChild(card);
+}
+
+async function lookup() {
+  const code = $("#lookup").value.trim().toUpperCase();
+  const box = $("#lookupBox");
+  box.innerHTML = "";
+  if (!code) return;
+  try {
+    const b = await api(`/api/bookings/${encodeURIComponent(code)}`);
+    const card = el("div", { class: "ok", style: "margin-top:10px" });
+    card.append(el("b", {}, `${b.code} · ${b.status}`), el("div", {}, b.event),
+      el("div", {}, `${b.name} · ${b.email}`),
+      el("div", {}, b.seats.map((s) => `${s.section}-B${s.row}-${s.seat}`).join(", ")),
+      el("div", {}, `Jumlah ${RM(b.total_rm)}${b.parking ? " · parkir " + b.parking.lot + " (" + b.parking.plate + ")" : ""}`));
+    box.appendChild(card);
+  } catch (e) { box.appendChild(el("div", { class: "err" }, e.message)); }
+}
+
+$("#sort").addEventListener("change", listBest);
+$("#secFilter").addEventListener("change", async () => { const v = $("#secFilter").value; if (v) await openSection(v); else { curSec = null; grid = null; $("#seatGrid").innerHTML = ""; $("#secTitle").textContent = "Semua seksyen"; await listBest(); } });
+$("#btnList").addEventListener("click", listBest);
+$("#btnAuto").addEventListener("click", autoAssign);
+$("#btnClear").addEventListener("click", () => { resetSel(); if (curSec) openSection(curSec); });
+$("#btnBook").addEventListener("click", book);
+$("#btnLookup").addEventListener("click", lookup);
+loadEvents().catch((e) => setErr("Gagal muat acara: " + e.message));
+</script>
+</body>
+</html>
